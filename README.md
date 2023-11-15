@@ -391,11 +391,16 @@ logging:
 '''
 7. we can delete the files service.yaml, namespace.yaml, deployment.yaml files from kubernetes
 
-8. now we can create our docker image with command below:
+8. add 'python-json-logger==2.0.7' to service_requirements.txt file
+
+# Deploying the Model
+## Creating a Docker Image
+
+ now we can create our docker image with command below:
 '''bash
 docker build --build-arg DATE_CREATED="$DATE_CREATED" --build-arg VERSION="0.1.0" --build-arg REVISION="$REVISION" -t insurance_charges_model_service:0.1.0 .
 '''
-9. we can run our image with command below:
+we can run our image with command below:
 '''bash
 docker run -d -p 8000:8000 -e REST_CONFIG=./configuration/rest_configuration.yaml -e NODE_IP="145.156.147.168" --name insurance_charges_docker insurance_charges_model_service:0.1.0
 '''

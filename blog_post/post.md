@@ -1199,6 +1199,8 @@ logging:
 '''
 7. we can delete the files service.yaml, namespace.yaml, deployment.yaml files from kubernetes
 
+8. add 'python-json-logger==2.0.7' to service_requirements.txt file
+
 # Deploying the Model
 ## Creating a Docker Image
 now we can create our docker image with command below:
