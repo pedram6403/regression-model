@@ -1001,56 +1001,229 @@ And the prediction result:
 By using the MLModel base class provided by the ml_base package and the
 REST service framework provided by the rest_model_service package we're
 able to quickly stand up a service to host the model.
+# Adding Logging feature
+for add logging feature to the model we can use Logging for ML Model Deployments from https://github.com/schmidtbri/logging-for-ml-models and integrate it at our model.
 
-# Deploying the Model
+1. To download the source code execute this command:
+'''bash
+git clone https://github.com/schmidtbri/logging-for-ml-models
+'''
+the logging for ML Models was written for another model (risk model) but we want to use this service in our model so we do not need all of the codes. 
+2. we should select part of it and move them to our project:
+list of files and folder that we need:
+'''bash
+configuration folder
+ml_model_logging folder
+model_service.yaml file from kubernetes folder
+'''
+copy these folders and file and paste them at our model main directory (we past the model_service.yaml file at kubernetes folder)
 
-Now that we have a working model and model service, we'll need to deploy
-it somewhere. To do this, we'll use docker and kubernetes.
+3. change the dockerfile at our model and write the code bellow on it:
+'''bashh
+FROM tiangolo/uvicorn-gunicorn-fastapi:python3.9 as base
 
-## Creating a Docker Image
+# creating and activating a virtual environment
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-Before moving forward, let's create a docker image and run it locally.
-The docker image is generated using instructions in the
-[Dockerfile](https://github.com/schmidtbri/regression-model/blob/master/Dockerfile):
+# installing dependencies
+COPY ./service_requirements.txt ./service_requirements.txt
+RUN pip install --no-cache -r service_requirements.txt
 
-```dockerfile
-FROM tiangolo/uvicorn-gunicorn-fastapi:python3.7
+FROM base as runtime
 
-MAINTAINER Brian Schmidt
-"6666331+schmidtbri@users.noreply.github.com"
+ARG DATE_CREATED
+ARG REVISION
+ARG VERSION
 
-WORKDIR ./service
+LABEL org.opencontainers.image.title="Logging for ML Models"
+LABEL org.opencontainers.image.description="Logging for machine learning models."
+LABEL org.opencontainers.image.created=$DATE_CREATED
+LABEL org.opencontainers.image.authors="6666331+schmidtbri@users.noreply.github.com"
+LABEL org.opencontainers.image.source="https://github.com/schmidtbri/logging-for-ml-models"
+LABEL org.opencontainers.image.version=$VERSION
+LABEL org.opencontainers.image.revision=$REVISION
+LABEL org.opencontainers.image.licenses="MIT License"
+LABEL org.opencontainers.image.base.name="python:3.9-slim"
 
+WORKDIR /service
+
+#copy Files
 COPY ./insurance_charges_model ./insurance_charges_model
 COPY ./rest_config.yaml ./rest_config.yaml
 COPY ./service_requirements.txt ./service_requirements.txt
+COPY ./kubernetes_rest_config.yaml ./kubernetes_rest_config.yaml
+COPY ./configuration ./configuration
 
-RUN pip install -r service_requirements.txt
+# Expose the port your application runs on
+EXPOSE 8000
+
+# install packages
+
+
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends libgomp1 && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+
+COPY --from=base /opt/venv ./venv
+
+COPY ./ml_model_logging ./ml_model_logging
+COPY ./LICENSE ./LICENSE
+
+ENV PATH /service/venv/bin:$PATH
+ENV PYTHONPATH="${PYTHONPATH}:/service"
 
 ENV APP_MODULE=rest_model_service.main:app
-```
-
-The Dockerfile is used by this command to create the docker image:
-
-```bash
-docker build -t insurance_charges_model:0.1.0 .
-```
-
-To make sure everything worked as expected, we'll look through the
-docker images in our system:
+CMD ["uvicorn", "rest_model_service.main:app", "--host", "0.0.0.0", "--port", "8000"]
+'''
+4. chang the rest_config.yaml file like code below:
 
 ```bash
-docker image ls
+service_title: Insurance Charges Model Service
+models:
+  - class_path: insurance_charges_model.prediction.model.InsuranceChargesModel
+    create_endpoint: true
+    decorators:
+      - class_path: ml_model_logging.logging_decorator.LoggingDecorator
+        configuration:
+          input_fields: ["age", "sex"]
+          output_fields: ["charges"]
+logging:
+    version: 1
+    disable_existing_loggers: false
+    formatters:
+      json_formatter:
+        class: pythonjsonlogger.jsonlogger.JsonFormatter
+        format: "%(asctime)s %(node_ip)s %(name)s %(levelname)s %(message)s"
+    filters:
+      environment_info_filter:
+        "()": ml_model_logging.filters.EnvironmentInfoFilter
+        env_variables:
+        - NODE_IP
+    handlers:
+      stdout:
+        level: INFO
+        class: logging.StreamHandler
+        stream: ext://sys.stdout
+        formatter: json_formatter
+        filters:
+        - environment_info_filter
+    loggers:
+      root:
+        level: INFO
+        handlers:
+        - stdout
+        propagate: true
+
 ```
+5. at configuration folder change the kubernetes_rest_config.yaml file:
+'''bash
+service_title: Insurance Charges Model Service
+models:
+  - class_path: insurance_charges_model.prediction.model.InsuranceChargesModel
+    create_endpoint: true
+    decorators:
+      - class_path: ml_model_logging.logging_decorator.LoggingDecorator
+        configuration:
+          input_fields: ["age", "sex"]
+          output_fields: ["charges"]
+logging:
+    version: 1
+    disable_existing_loggers: false
+    formatters:
+      json_formatter:
+        class: pythonjsonlogger.jsonlogger.JsonFormatter
+        format: "%(asctime)s %(pod_name)s %(node_name)s %(app_name)s %(name)s %(levelname)s %(message)s"
+    filters:
+      environment_info_filter:
+        "()": ml_model_logging.filters.EnvironmentInfoFilter
+        env_variables:
+        - POD_NAME
+        - NODE_NAME
+        - APP_NAME
+    handlers:
+      stdout:
+        level: INFO
+        class: logging.StreamHandler
+        stream: ext://sys.stdout
+        formatter: json_formatter
+        filters:
+        - environment_info_filter
+    loggers:
+      root:
+        level: INFO
+        handlers:
+        - stdout
+        propagate: true
+'''
+6. at configuration folder change the rest_configuration.yaml file:
+'''bash
+service_title: Insurance Charges Model Service
+models:
+  - class_path: insurance_charges_model.prediction.model.InsuranceChargesModel
+    create_endpoint: true
+    decorators:
+      - class_path: ml_model_logging.logging_decorator.LoggingDecorator
+        configuration:
+          input_fields: ["age", "sex"]
+          output_fields: ["charges"]
+logging:
+    version: 1
+    disable_existing_loggers: false
+    formatters:
+      json_formatter:
+        class: pythonjsonlogger.jsonlogger.JsonFormatter
+        format: "%(asctime)s %(node_ip)s %(name)s %(levelname)s %(message)s"
+    filters:
+      environment_info_filter:
+        "()": ml_model_logging.filters.EnvironmentInfoFilter
+        env_variables:
+        - NODE_IP
+    handlers:
+      stdout:
+        level: INFO
+        class: logging.StreamHandler
+        stream: ext://sys.stdout
+        formatter: json_formatter
+        filters:
+        - environment_info_filter
+    loggers:
+      root:
+        level: INFO
+        handlers:
+        - stdout
+        propagate: true
+'''
+7. we can delete the files service.yaml, namespace.yaml, deployment.yaml files from kubernetes
 
-The insurance_charges_model image should be listed. Next, we'll start
-the image to see if everything is working as expected:
+# Deploying the Model
+## Creating a Docker Image
+now we can create our docker image with command below:
+'''bash
+docker build --build-arg DATE_CREATED="$DATE_CREATED" --build-arg VERSION="0.1.0" --build-arg REVISION="$REVISION" -t insurance_charges_model_service:0.1.0 .
+'''
+ we can run our image with command below:
+'''bash
+docker run -d -p 8000:8000 -e REST_CONFIG=./configuration/rest_configuration.yaml -e NODE_IP="145.156.147.168" --name insurance_charges_docker insurance_charges_model_service:0.1.0
+'''
+now you can see our model at your browser with address:
+'''bash
+http://localhost:8000
 
-```bash
-docker run -d -p 80:80 insurance_charges_model:0.1.0
-```
+'''
+![homepage](https://github.com/uqam-lomagnin/logging-of-regression-model-pedram6403/blob/6a75ccfb61406d3a079ffacee31d698d1521534e/images/homepage.png)
 
-The service should be accessible on port 80 of localhost, so we'll try
+if you send the post request like this:
+![post request](https://github.com/uqam-lomagnin/logging-of-regression-model-pedram6403/blob/6a75ccfb61406d3a079ffacee31d698d1521534e/images/post%20request.png)
+
+you can see the log at your docker image: 
+![post request](https://github.com/uqam-lomagnin/logging-of-regression-model-pedram6403/blob/6a75ccfb61406d3a079ffacee31d698d1521534e/images/dockerlogforpost.png)
+
+
+The service should be accessible on port 8000 of localhost, so we'll try
 to make a prediction using the curl command:
 
 ```bash

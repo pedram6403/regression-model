@@ -13,12 +13,14 @@ logging:
     formatters:
       json_formatter:
         class: pythonjsonlogger.jsonlogger.JsonFormatter
-        format: "%(asctime)s %(node_ip)s %(name)s %(levelname)s %(message)s"
+        format: "%(asctime)s %(pod_name)s %(node_name)s %(app_name)s %(name)s %(levelname)s %(message)s"
     filters:
       environment_info_filter:
         "()": ml_model_logging.filters.EnvironmentInfoFilter
         env_variables:
-        - NODE_IP
+        - POD_NAME
+        - NODE_NAME
+        - APP_NAME
     handlers:
       stdout:
         level: INFO
